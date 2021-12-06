@@ -2,7 +2,7 @@
 import socket, select, time
 import tkinter as tk
 from tkinter import scrolledtext
-from tkinter.constants import END
+from tkinter.constants import END, TRUE
 import tkinter.font as tkFont
 from packet import *
 from _thread import *
@@ -124,15 +124,15 @@ class Client:
         # Server sent list of chatrooms
         elif opCode == OPCODES["OPCODE_LIST_ROOMS"]:
             event, error = self.updateRooms(payload)
+        # Server sent user list for the room
+        elif opCode == OPCODES["OPCODE_LIST_USERS"]:
+            event, error = self.updateUsers(payload)
         # TODO server should not send this
         elif opCode == OPCODES["OPCODE_CREATE_ROOM"]:
             pass
         # Assign user to a room
         elif opCode == OPCODES["OPCODE_JOIN_ROOM"]:
-            self.room = payload
-            event += f'you joined room \"{self.room}\"'
-            self.clearText()
-            self.buildRoomFrame()
+            event, error = self.assignRoom(payload)
         # Server removed client from room
         elif opCode == OPCODES["OPCODE_LEAVE_ROOM"]:
             self.room = ''
@@ -150,6 +150,17 @@ class Client:
             pass
 
         self.printEvent(event,error)
+
+    def assignRoom(self, room):
+        error = False
+        self.room = room
+        event = f'<SERVER> you joined room \"{self.room}\"'
+        packet = encodePacket(OPCODES["OPCODE_LIST_USERS"],room)
+        self.send(packet)
+        self.clearText()
+        self.buildRoomFrame()
+
+        return event, error
 
     def updateRooms(self, roomStr):
         error = False
@@ -184,6 +195,9 @@ class Client:
             tk.Label(self.roomFrame, text=f"{self.room}", font=self.style).pack()
             users = scrolledtext.ScrolledText(self.roomFrame, width=12, height=22)
             users.pack()
+            for user in self.userList:
+                users.insert(tk.INSERT,user + '\n')
+            users.configure(state='disabled')
             tk.Button(self.roomFrame, text='Leave Room', width=15, command=self.leaveRoom).pack()
 
     def joinRoom(self, room):
@@ -224,3 +238,20 @@ class Client:
             self.textBox.insert("end","\n")
         self.textBox.see("end")
         self.textBox.configure(state='disabled')
+
+    def updateUsers(self, userStr):
+        error = False
+        
+        # Client not in a room should not have recieved this
+        if self.room == '':
+            error = TRUE
+            event = f"<CLIENT> Server sent user list update when not in a room" 
+
+        else:
+            event = f"<SERVER> updated user list for \"{self.room}\""
+            print(userStr) 
+            if userStr:
+                self.userList = userStr.split(',')
+
+        self.buildRoomFrame()
+        return event,error

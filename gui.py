@@ -129,7 +129,7 @@ class Gui:
         self.clearFrame()
         self.root.geometry("")
         tk.Label(self.frame, text="Server Running - IP: " + self.netInfo[0] + " Port: " + str(self.netInfo[1]), font=self.style).grid(row=0,columnspan=2)
-        serverText = scrolledtext.ScrolledText(self.frame)
+        serverText = scrolledtext.ScrolledText(self.frame, width=100)
         serverText.grid(row=1,column=0)
         tk.Label(self.frame, text="Rooms", font=self.style).grid(row=0,column=2)
         roomText = scrolledtext.ScrolledText(self.frame, width=15)
@@ -164,15 +164,12 @@ class Gui:
         roomFrame.grid(row=0,column=3,rowspan=2, sticky='n')
         self.client = client.Client(self.netInfo, username, clientText, roomFrame)
         start_new_thread(self.client.getServerMsgs,())
-
-    def processEvent(self):
-        while self.queue.qsize():
-            message = self.queue.get(0)
-            self.update(message)
     
     def update(self, textBox, message):
+        textBox.configure(state='normal')
         textBox.insert('end',message)
         textBox.see('end')
+        textBox.configure(state='normal')
     
 if __name__ == "__main__":
     root = tk.Tk()

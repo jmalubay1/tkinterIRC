@@ -1,5 +1,7 @@
+import builtins
 import socket, time
 import tkinter as tk
+from types import CellType
 from packet import *
 from _thread import *
     
@@ -18,6 +20,8 @@ class Server:
         self.server.bind(self.netInfo)
         # Max allowable connections
         self.server.listen(100)
+
+        self.lastPacket = {}
 
         # Client and room data
         self.clientList = []
@@ -70,11 +74,22 @@ class Server:
         
     def remove(self, client):
         """
-        Remove a client from the active user list
-        TODO remove user and room location
+        Remove a client from the following:
+        self.clientList
+        self.usernames
+        self.userRoom
+        
         """
+        clientIp = client.getpeername()
+
         if client in self.clientList:
             self.clientList.remove(client)
+        
+        if client in self.userRoom:
+            self.userRoom.pop(client)
+
+        if clientIp in self.usernames:
+            self.usernames.pop(clientIp)
 
         
     
@@ -144,15 +159,15 @@ class Server:
 
     def updateInfo(self):
         # Clear old info
-        self.roomText.delete(1.0,tk.END)
-        self.userText.delete(1.0,tk.END)
 
         self.roomText.configure(state='normal')
+        self.roomText.delete(1.0,tk.END)
         for room in self.roomList:
             self.roomText.insert(tk.INSERT,room + '\n')
         self.roomText.configure(state='disabled')
 
         self.userText.configure(state='normal')
+        self.userText.delete(1.0,tk.END)
         for user in self.usernames.values():
             self.userText.insert(tk.INSERT,user + '\n')
         self.userText.configure(state='disabled')
@@ -186,6 +201,9 @@ class Server:
         # TODO Client should not be sending this
         elif opCode == OPCODES["OPCODE_LIST_ROOMS"]:
             pass
+        # Client requests users in their room
+        elif opCode == OPCODES["OPCODE_LIST_USERS"]:
+            event, error = self.sendUsers(client, payload)
         # Client requests creation of room
         elif opCode == OPCODES["OPCODE_CREATE_ROOM"]:
             event, error = self.createRoom(client, payload)
@@ -209,6 +227,40 @@ class Server:
 
         self.printEvent(event,error)
         self.updateInfo()
+
+    def sendUsers(self, client, room):
+        error = False
+        clientIp = client.getpeername()
+        event = self.buildTag(client)
+
+        # Room does not exist tell user
+        if room not in self.roomList:
+            error = True
+            packet = encodePacket(OPCODES["OPCODE_ERR"],str(ERRORCODES["ERR_ILLEGAL_NAME"]) + f":ERR_ILLEGAL_NAME - room \"{room}\" does not exists, no users to send")
+            client.send(packet)
+            event += f"ERR_NAME_EXISTS - room name \"{room}\" alread exsists"
+
+        # Send client the user list
+        else:
+            # Get all the usernames
+            # TODO This is awful and these data structures need
+            # to be reworked 
+            clientIpList = []
+            for k,v in self.userRoom.items():
+                if v == room:
+                    clientIpList.append(k.getpeername())
+            userList = []
+            for k,v in self.usernames.items():
+                if k in clientIpList:
+                    userList.append(v)
+
+            userStr = ','.join(userList)
+            packet = encodePacket(OPCODES["OPCODE_LIST_USERS"],userStr)
+            self.send(client, packet)
+
+            event += f"sent \"{self.usernames[clientIp]}\" userlist for \"{room}\""
+
+        return event, error
 
     def sendRoomlist(self, client):
         roomStr = ",".join(self.roomList)
@@ -298,7 +350,7 @@ class Server:
             packet = encodePacket(OPCODES["OPCODE_JOIN_ROOM"],room)
             client.send(packet)
             self.userRoom[client] = room
-            event += f" - joined chatroom \"{room}\""
+            event += f" joined chatroom \"{room}\""
 
         # Room does not exists send error to user
         else:
@@ -322,7 +374,7 @@ class Server:
         if client in self.userRoom:
             packet = encodePacket(OPCODES["OPCODE_LEAVE_ROOM"],self.userRoom[client])
             client.send(packet)
-            event += f" - left chatroom \"{self.userRoom[client]}\""
+            event += f" left chatroom \"{self.userRoom[client]}\""
             self.userRoom.pop(client)
 
         # Client is not in a room
@@ -399,3 +451,19 @@ class Server:
                 except:
                     self.remove(client)
                     client.close()
+
+    def send(self, client, packet):
+        """
+        Store the last packet for each client to resend on 
+        certain errors
+        """
+        self.lastPacket[client] = packet
+        client.send(packet)
+
+    def resend(self, client):
+        """
+        Resend most recent packet
+        """
+        event = self.buildTag(client) + "Resending last packet"
+        self.printEvent(event,True)
+        client.send(self.lastPacket[client])
