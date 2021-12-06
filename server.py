@@ -185,9 +185,6 @@ class Server:
         if opCode == OPCODES["OPCODE_ERR"]:
             event += " Client returned error - " + list(ERRORCODES.keys())[payload]
             error = True
-        # TODO decide if this code is even necessary    
-        elif opCode == OPCODES["OPCODE_KEEPALIVE"]:
-            pass
         # Client just joined add their username
         elif opCode == OPCODES["OPCODE_HELLO"]:
             username = self.createUsername(client, payload)
